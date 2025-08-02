@@ -1,5 +1,4 @@
-# 🧠 لوحة ذكاء العملاء - Streamlit موحد
-
+# 🧠 لوحة ذكاء العملاء مع تطابق أعمدة التدريب والتنبؤ
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -16,12 +15,10 @@ st.title("📊 لوحة ذكاء العملاء - تنظيف، تحليل، تد
 
 df = None
 model = None
+features_used = None
 
 tab1, tab2, tab3, tab4 = st.tabs(["🧼 تنظيف البيانات", "📈 تحليل السمات", "🤖 تدريب النموذج", "🔍 تجربة عميل جديد"])
 
-# -----------------------------
-# 🧼 تنظيف البيانات
-# -----------------------------
 with tab1:
     st.subheader("🧼 تحميل وتنظيف ملف Excel")
     uploaded_file = st.file_uploader("📤 ارفع ملف Excel", type=["xlsx"])
@@ -35,16 +32,13 @@ with tab1:
         df = df.dropna()
         df = df.drop_duplicates()
 
-        st.success("✅ تم تنظيف البيانات (إزالة القيم المفقودة والتكرار)")
+        st.success("✅ تم تنظيف البيانات")
 
         buffer = io.BytesIO()
         df.to_excel(buffer, index=False, engine='openpyxl')
         buffer.seek(0)
         st.download_button("📥 تحميل البيانات النظيفة", data=buffer, file_name="cleaned_data.xlsx")
 
-# -----------------------------
-# 📈 تحليل السمات مقابل الهدف
-# -----------------------------
 with tab2:
     st.subheader("📊 تحليل العلاقة بين السمات والهدف")
     if df is not None:
@@ -60,7 +54,6 @@ with tab2:
             selected_feature = st.selectbox("اختر سمة لعرض العلاقة", X.columns)
 
             boxplot_df = pd.DataFrame({"feature": X[selected_feature], "target": y}).dropna()
-
             st.subheader("📊 القيم الإحصائية")
             stats = boxplot_df.groupby("target")["feature"].describe()
             st.dataframe(stats)
@@ -73,21 +66,18 @@ with tab2:
     else:
         st.info("📂 يرجى رفع وتنظيف ملف البيانات أولاً")
 
-# -----------------------------
-# 🤖 تدريب نموذج الذكاء الاصطناعي
-# -----------------------------
 with tab3:
-    st.subheader("🤖 تدريب نموذج سداد العملاء")
-    if df is not None and target_column:
-        X = df.drop(columns=[target_column])
-        y = df[target_column]
+    st.subheader("🤖 تدريب نموذج السداد")
+    if df is not None and 'سدد' in df.columns:
+        X = df.drop(columns=['سدد'])
+        y = df['سدد']
 
         test_size = st.slider("🔀 نسبة بيانات الاختبار", 0.1, 0.5, 0.3)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
         train_data = pd.concat([X_train, y_train], axis=1).dropna()
-        X_train = train_data.drop(columns=[target_column])
-        y_train = train_data[target_column]
+        X_train = train_data.drop(columns=['سدد'])
+        y_train = train_data['سدد']
 
         model = RandomForestClassifier()
         model.fit(X_train, y_train)
@@ -97,41 +87,38 @@ with tab3:
         st.text("📋 تقرير التصنيف:")
         st.text(classification_report(y_test, y_pred))
 
-        joblib.dump(model, "model_sadad.pkl")
-        st.download_button("💾 تحميل النموذج المدرب", data=open("model_sadad.pkl", "rb"), file_name="model_sadad.pkl")
-
+        features_used = X_train.columns.tolist()
+        joblib.dump((model, features_used), "model_sadad.pkl")
+        st.download_button("💾 تحميل النموذج", data=open("model_sadad.pkl", "rb"), file_name="model_sadad.pkl")
     else:
-        st.info("📂 يرجى تنظيف وتحليل البيانات أولاً")
+        st.info("📂 يرجى تحميل وتنظيف البيانات أولاً")
 
-# -----------------------------
-# 🔍 تجربة تنبؤ عميل جديد
-# -----------------------------
 with tab4:
-    st.subheader("🔍 تجربة نموذج التنبؤ على عميل جديد")
+    st.subheader("🔍 تجربة نموذج التنبؤ")
     try:
-        model = joblib.load("model_sadad.pkl")
+        model, features_used = joblib.load("model_sadad.pkl")
     except:
-        st.warning("❌ لم يتم العثور على نموذج مدرب")
+        st.warning("❌ لم يتم العثور على نموذج مدرب.")
         st.stop()
 
     st.markdown("أدخل بيانات العميل الجديد:")
-    c1, c2 = st.columns(2)
-    with c1:
-        r = st.number_input("الرصيد", min_value=0.0)
-        age = st.number_input("عمر المديونية", min_value=0.0)
-        sales = st.number_input("المبيعات الشهرية", min_value=0.0)
-    with c2:
-        avg = st.number_input("متوسط السداد التراكمي", min_value=0.0)
-        sd = st.number_input("السداد الشهري للعميل", min_value=0.0)
-        returns = st.number_input("نسبة المرتجع من المباع", min_value=0.0, format="%.4f")
+
+    user_inputs = {}
+    for col in features_used:
+        if "نسبة" in col or "حجم" in col:
+            user_inputs[col] = st.number_input(col, format="%.4f")
+        elif "عمر" in col or "الربع" in col or "خط" in col:
+            user_inputs[col] = st.number_input(col, step=1.0, format="%.0f")
+        else:
+            user_inputs[col] = st.number_input(col, step=1000.0)
 
     if st.button("🔍 تنبؤ الآن"):
-        new_data = pd.DataFrame([[r, age, sales, avg, sd, returns]],
-                                columns=["الرصيد", "عمر المديونية", "المبيعات الشهرية",
-                                         "متوسط السداد التراكمي", "السداد الشهري للعميل",
-                                         "نسبة المرتجع من المباع"])
-        pred = model.predict(new_data)[0]
-        if pred == 1:
-            st.success("✅ العميل مرشح للسداد")
-        else:
-            st.error("❌ العميل معرض لعدم السداد")
+        try:
+            new_data = pd.DataFrame([user_inputs])[features_used]
+            pred = model.predict(new_data)[0]
+            if pred == 1:
+                st.success("✅ العميل مرشح للسداد")
+            else:
+                st.error("❌ العميل معرض لعدم السداد")
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء التنبؤ: {e}")
